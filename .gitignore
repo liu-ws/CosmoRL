@@ -1,0 +1,7 @@
+/.venv/
+/.agents/
+/.aws/
+/.codex/
+__pycache__/
+*.py[cod]
+*.pt

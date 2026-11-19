@@ -1,0 +1,13 @@
+[project]
+name = "cosmorl"
+version = "0.1.0"
+description = "Particle-Mesh cosmology and reinforcement learning with PyTorch"
+requires-python = ">=3.12"
+dependencies = [
+    "classy>=3.3.4,<4",
+    # PyTorch initializes its NumPy bridge at import time.
+    "numpy>=2,<3",
+    # CLASS 3.4 imports SciPy but omits it from its package metadata.
+    "scipy>=1.13,<2",
+    "torch>=2.11,<3",
+]
