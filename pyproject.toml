@@ -1,7 +1,13 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
 [project]
 name = "cosmorl"
-version = "0.1.0"
-description = "Particle-Mesh cosmology and reinforcement learning with PyTorch"
+version = "0.2.0"
+description = "Particle-Mesh cosmology and O(3)-equivariant reinforcement learning with PyTorch"
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = [
     "classy>=3.3.4,<4",
@@ -11,3 +17,9 @@ dependencies = [
     "scipy>=1.13,<2",
     "torch>=2.11,<3",
 ]
+
+[project.scripts]
+cosmorl = "cosmorl.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cosmorl"]

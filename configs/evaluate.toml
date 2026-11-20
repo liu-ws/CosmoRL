@@ -1,0 +1,10 @@
+# 策略评估配置（与同预算固定步长基线对比）
+# 运行: cosmorl evaluate -c configs/evaluate.toml
+
+[runtime]
+device = "auto"
+threads = 4
+
+[evaluation]
+checkpoint_path = "outputs/policy.pt"
+episodes = 4

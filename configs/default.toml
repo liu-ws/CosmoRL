@@ -1,0 +1,62 @@
+# CosmoRL 完整默认配置文件
+# 用法示例：
+#   cosmorl simulate -c configs/default.toml
+#   cosmorl train    -c configs/default.toml
+#   cosmorl evaluate -c configs/default.toml
+
+[runtime]
+device = "auto"      # "auto" | "cpu" | "cuda"
+threads = 4          # PyTorch CPU 线程数
+
+[cosmology]
+h = 0.674
+omega_b = 0.0224
+omega_cdm = 0.12
+scalar_amplitude = 2.1e-9
+scalar_index = 0.965
+
+[simulation]
+grid_size = 16       # 每轴力网格数 N
+particle_size = 16   # 每轴粒子数（粒子总数 N_p = particle_size^3）
+box_mpc = 100.0      # 共动盒长 L (Mpc)
+a_initial = 0.05     # 初始尺度因子 a_i
+a_final = 1.0        # 终止尺度因子 a_f
+steps = 64           # 固定步长模拟步数（在 ln a 上均匀分布）
+seed = 0             # 初始场随机种子
+# output_path = "outputs/snapshot.pt"
+
+[environment]
+budget = 48                            # 允许新增的 PM 步数预算 B
+reference_steps = 192                  # 参考解固定步数（需大于 budget）
+actions = [0.01, 0.02, 0.04, 0.08]     # 离散候选步长 Δln(a)
+density_scale = 1e-6                   # 密度场误差尺度 τ_δ
+power_scale = 1e-6                     # 功率谱误差尺度 τ_P
+reward_every = "terminal"              # "terminal"（仅终局）或正整数 N
+
+[policy]
+channels = 8         # 隐藏特征通道数
+kernel_size = 3      # 等变三维卷积核宽度（须为正奇数）
+conv_layers = 2      # 等变卷积层数
+residual = false     # 是否从第 2 层起启用残差连接
+hidden_dim = 32      # 共享 MLP 隐藏层维度
+
+[ppo]
+learning_rate = 3e-4
+epochs = 4
+minibatch_size = 8
+clip_ratio = 0.2
+value_coef = 0.5
+entropy_coef = 0.01
+gae_lambda = 0.95
+max_grad_norm = 0.5
+
+[training]
+seed = 0
+updates = 2
+episodes_per_update = 2
+output_path = "outputs/policy.pt"
+
+[evaluation]
+checkpoint_path = "outputs/policy.pt"
+# seed = 4           # 省略则自动从训练检查点记录的 next_seed 开始
+episodes = 2

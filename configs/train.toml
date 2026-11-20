@@ -1,0 +1,51 @@
+# PPO 自适应步长策略训练配置
+# 运行: cosmorl train -c configs/train.toml
+
+[runtime]
+device = "auto"
+threads = 4
+
+[cosmology]
+h = 0.674
+omega_b = 0.0224
+omega_cdm = 0.12
+scalar_amplitude = 2.1e-9
+scalar_index = 0.965
+
+[simulation]
+grid_size = 16
+particle_size = 16
+box_mpc = 100.0
+a_initial = 0.05
+a_final = 1.0
+
+[environment]
+budget = 48
+reference_steps = 192
+actions = [0.01, 0.02, 0.04, 0.08]
+density_scale = 1e-6
+power_scale = 1e-6
+reward_every = "terminal"
+
+[policy]
+channels = 8
+kernel_size = 3
+conv_layers = 2
+residual = false
+hidden_dim = 32
+
+[ppo]
+learning_rate = 3e-4
+epochs = 4
+minibatch_size = 8
+clip_ratio = 0.2
+value_coef = 0.5
+entropy_coef = 0.01
+gae_lambda = 0.95
+max_grad_norm = 0.5
+
+[training]
+seed = 0
+updates = 10
+episodes_per_update = 4
+output_path = "outputs/policy.pt"

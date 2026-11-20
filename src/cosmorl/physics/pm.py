@@ -1,45 +1,55 @@
-"""Periodic Particle-Mesh gravity and kick-drift-kick integration."""
+"""Periodic Particle-Mesh gravity solver and kick-drift-kick integrator."""
+
+from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
 from math import exp, log, tau
-from typing import Literal
+from typing import TYPE_CHECKING
 
-import numpy as np
 import torch
 from torch import Tensor
 
+if TYPE_CHECKING:
+    from .cosmology import Background
+
 
 def spectral_geometry(size: int, device: torch.device) -> tuple[Tensor, Tensor, Tensor]:
-    """Return squared wave numbers, q/q², and a mask for all Nyquist planes."""
-    args = {"n": size, "d": 1 / size, "device": device, "dtype": torch.float64}
-    # tau = 2 * pi
-    full = tau * torch.fft.fftfreq(**args)
-    half = tau * torch.fft.rfftfreq(**args)
+    """Return squared wave numbers q^2, q/q^2 with Nyquist derivatives zeroed, and Nyquist mask."""
+    kwargs = {"n": size, "d": 1 / size, "device": device, "dtype": torch.float64}
+    full = tau * torch.fft.fftfreq(**kwargs)
+    half = tau * torch.fft.rfftfreq(**kwargs)
     wave = torch.stack(torch.meshgrid(full, full, half, indexing="ij"))
     q_squared = wave.square().sum(dim=0)
+
     nyquist = torch.zeros_like(wave, dtype=torch.bool)
     if size % 2 == 0:
         nyquist[0, size // 2, :, :] = True
         nyquist[1, :, size // 2, :] = True
         nyquist[2, :, :, size // 2] = True
+
     denominator = q_squared.clone()
-    denominator[0, 0, 0] = 1
-    return q_squared, wave.masked_fill(nyquist, 0) / denominator, nyquist.any(dim=0)
+    denominator[0, 0, 0] = 1.0
+    inverse_gradient = wave.masked_fill(nyquist, 0.0) / denominator
+    return q_squared, inverse_gradient, nyquist.any(dim=0)
 
 
 @dataclass(frozen=True)
 class CICStencil:
+    """Precomputed Cloud-In-Cell (CIC) corner indices and trilinear weights."""
+
     indices: Tensor
     weights: Tensor
 
 
 class PeriodicMesh:
-    def __init__(self, size: int, omega_m: float, device: torch.device):
+    """Three-dimensional periodic Particle-Mesh grid with CIC and spectral Poisson force."""
+
+    def __init__(self, size: int, omega_m: float, device: torch.device) -> None:
         if size < 2:
-            raise ValueError("The force grid needs at least two cells per axis.")
+            raise ValueError("The force grid requires at least two cells per axis.")
         self.size = size
-        self.shape = (size,) * 3
+        self.shape = (size, size, size)
         binary = torch.arange(2, device=device)
         self.offsets = torch.cartesian_prod(binary, binary, binary)
         self.upper_corner = self.offsets.bool()
@@ -47,20 +57,25 @@ class PeriodicMesh:
         self.force_kernel = (1.5j * omega_m) * inverse_gradient
 
     def stencil(self, positions: Tensor) -> CICStencil:
-        coordinate = positions.remainder(1) * self.size
+        """Compute periodic CIC neighbor indices and trilinear weights for particle positions."""
+        coordinate = positions.remainder(1.0) * self.size
         lower = coordinate.floor().long()
         fraction = coordinate - lower
         corners = (lower[:, None, :] + self.offsets).remainder(self.size)
         x, y, z = corners.unbind(dim=-1)
         indices = (x * self.size + y) * self.size + z
-        weights = torch.where(self.upper_corner, fraction[:, None, :], 1 - fraction[:, None, :])
-        return CICStencil(indices, weights.prod(dim=-1))
+        weights = torch.where(self.upper_corner, fraction[:, None, :], 1.0 - fraction[:, None, :])
+        return CICStencil(indices=indices, weights=weights.prod(dim=-1))
 
     def deposit(self, stencil: CICStencil, values: Tensor | None = None) -> Tensor:
+        """Deposit unit particle counts or multi-channel particle attributes onto the grid."""
         indices = stencil.indices.flatten()
         weights = stencil.weights
         if values is None:
-            return weights.new_zeros(self.size**3).scatter_add_(0, indices, weights.flatten()).view(self.shape)
+            grid = weights.new_zeros(self.size**3)
+            grid.scatter_add_(0, indices, weights.flatten())
+            return grid.view(self.shape)
+
         channels = values.shape[1]
         contributions = (values.T.unsqueeze(-1) * weights).flatten(start_dim=1)
         grid = weights.new_zeros((channels, self.size**3))
@@ -68,44 +83,24 @@ class PeriodicMesh:
         return grid.view(channels, *self.shape)
 
     def density_contrast(self, stencil: CICStencil) -> Tensor:
-        return self.deposit(stencil) * (self.size**3 / stencil.indices.shape[0]) - 1
+        """Compute dimensionless density contrast delta = (N^3 / N_p) * c - 1."""
+        return self.deposit(stencil) * (self.size**3 / stencil.indices.shape[0]) - 1.0
 
     def grid_force(self, delta: Tensor) -> Tensor:
+        """Solve the periodic Poisson equation in Fourier space for the dimensionless grid force."""
         delta_hat = torch.fft.rfftn(delta, dim=(-3, -2, -1))
         return torch.fft.irfftn(self.force_kernel * delta_hat, s=self.shape, dim=(-3, -2, -1))
 
     def interpolate(self, grid: Tensor, stencil: CICStencil) -> Tensor:
+        """Interpolate a multi-channel grid field back to particle positions using the CIC stencil."""
         corners = grid.flatten(start_dim=1)[:, stencil.indices]
         return (corners * stencil.weights).sum(dim=-1).T.contiguous()
 
 
-_QUADRATURE_NODES, _QUADRATURE_WEIGHTS = np.polynomial.legendre.leggauss(8)
-
-
-@dataclass(frozen=True)
-class Background:
-    omega_m: float
-    omega_lambda: float
-    omega_r: float
-
-    def time_factor(self, a0: float, a1: float, *, kind: Literal["drift", "kick"]) -> float:
-        """Integrate the drift or kick factor using eight nodes in ln(a)."""
-        if kind == "drift":
-            power = 2
-        elif kind == "kick":
-            power = 1
-        else:
-            raise ValueError(f"Expected 'drift' or 'kick', got {kind!r}.")
-        log_start, log_end = log(a0), log(a1)
-        half_interval = (log_end - log_start) / 2
-        a = np.exp((log_start + log_end) / 2 + half_interval * _QUADRATURE_NODES)
-        expansion = np.sqrt(self.omega_r / a**4 + self.omega_m / a**3 + self.omega_lambda)
-        integrand = 1 / (a**power * expansion)
-        return float(half_interval * np.dot(_QUADRATURE_WEIGHTS, integrand))
-
-
 @dataclass(frozen=True)
 class ParticleState:
+    """Snapshot of particle positions, canonical momenta, and cached mesh quantities at scale factor a."""
+
     a: float
     positions: Tensor
     momentum: Tensor
@@ -115,8 +110,9 @@ class ParticleState:
 
 
 def fixed_targets(a_initial: float, a_final: float, steps: int) -> Iterator[float]:
-    if steps < 1 or not a_initial < a_final <= 1:
-        raise ValueError("Fixed integration requires positive steps and a_initial < a_final <= 1.")
+    """Yield scale-factor targets spaced uniformly in ln(a)."""
+    if steps < 1 or not (a_initial < a_final <= 1.0):
+        raise ValueError("Fixed integration requires steps >= 1 and a_initial < a_final <= 1.")
     log_interval = log(a_final / a_initial)
     for index in range(1, steps):
         yield a_initial * exp(log_interval * index / steps)
@@ -124,45 +120,68 @@ def fixed_targets(a_initial: float, a_final: float, steps: int) -> Iterator[floa
 
 
 class Integrator:
-    def __init__(self, mesh: PeriodicMesh, background: Background):
+    """Symplectic Kick-Drift-Kick (KDK) integrator in scale factor a."""
+
+    def __init__(self, mesh: PeriodicMesh, background: Background) -> None:
         self.mesh = mesh
         self.background = background
 
     @torch.no_grad()
     def initialize(self, a: float, positions: Tensor, momentum: Tensor) -> ParticleState:
-        if not 0 < a <= 1 or positions.ndim != 2 or positions.shape[1] != 3 or positions.shape[0] == 0:
-            raise ValueError("Expected 0 < a <= 1 and a nonempty [particles, 3] position array.")
+        """Validate initial particle arrays and evaluate the initial density and force fields."""
+        if not (0 < a <= 1.0) or positions.ndim != 2 or positions.shape[1] != 3 or positions.shape[0] == 0:
+            raise ValueError("Expected 0 < a <= 1 and a non-empty [particles, 3] position tensor.")
         if momentum.shape != positions.shape:
             raise ValueError("Momentum must have the same shape as positions.")
         if not (torch.isfinite(positions).all() & torch.isfinite(momentum).all()).item():
             raise FloatingPointError("Non-finite particle initial conditions.")
-        positions = positions.remainder(1)
-        stencil = self.mesh.stencil(positions)
+
+        wrapped_positions = positions.remainder(1.0)
+        stencil = self.mesh.stencil(wrapped_positions)
         delta = self.mesh.density_contrast(stencil)
         force = self.mesh.interpolate(self.mesh.grid_force(delta), stencil)
-        return ParticleState(a, positions, momentum, delta, force, stencil)
+        return ParticleState(
+            a=a,
+            positions=wrapped_positions,
+            momentum=momentum,
+            delta=delta,
+            force=force,
+            stencil=stencil,
+        )
 
     @torch.no_grad()
     def step(self, state: ParticleState, a_next: float) -> ParticleState:
-        if not state.a < a_next <= 1:
-            raise ValueError("A KDK step must advance a towards a <= 1.")
-        midpoint = (state.a + a_next) / 2
+        """Advance particle state from state.a to a_next using one KDK leapfrog step."""
+        if not (state.a < a_next <= 1.0):
+            raise ValueError("A KDK step must advance scale factor towards a <= 1.")
+        midpoint = 0.5 * (state.a + a_next)
         kick_first = self.background.time_factor(state.a, midpoint, kind="kick")
         drift = self.background.time_factor(state.a, a_next, kind="drift")
         kick_last = self.background.time_factor(midpoint, a_next, kind="kick")
+
         half_momentum = state.momentum + kick_first * state.force
-        positions = (state.positions + drift * half_momentum).remainder(1)
+        positions = (state.positions + drift * half_momentum).remainder(1.0)
         if not torch.isfinite(positions).all().item():
             raise FloatingPointError("Non-finite particle positions during KDK drift.")
+
         stencil = self.mesh.stencil(positions)
         delta = self.mesh.density_contrast(stencil)
         force = self.mesh.interpolate(self.mesh.grid_force(delta), stencil)
         momentum = half_momentum + kick_last * force
         if not torch.isfinite(momentum).all().item():
             raise FloatingPointError("Non-finite momentum during KDK kick.")
-        return ParticleState(a_next, positions, momentum, delta, force, stencil)
+
+        return ParticleState(
+            a=a_next,
+            positions=positions,
+            momentum=momentum,
+            delta=delta,
+            force=force,
+            stencil=stencil,
+        )
 
     def advance_fixed(self, state: ParticleState, a_final: float, steps: int) -> ParticleState:
+        """Advance particle state to a_final using fixed steps uniform in ln(a)."""
         for target in fixed_targets(state.a, a_final, steps):
             state = self.step(state, target)
         return state

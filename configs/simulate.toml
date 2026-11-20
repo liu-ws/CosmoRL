@@ -1,0 +1,23 @@
+# 固定步长 Particle-Mesh 模拟配置
+# 运行: cosmorl simulate -c configs/simulate.toml
+
+[runtime]
+device = "auto"
+threads = 4
+
+[cosmology]
+h = 0.674
+omega_b = 0.0224
+omega_cdm = 0.12
+scalar_amplitude = 2.1e-9
+scalar_index = 0.965
+
+[simulation]
+grid_size = 16
+particle_size = 16
+box_mpc = 100.0
+a_initial = 0.05
+a_final = 1.0
+steps = 64
+seed = 0
+output_path = "outputs/snapshot.pt"
