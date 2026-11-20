@@ -21,6 +21,19 @@ def positive_int(value: str) -> int:
     return number
 
 
+def odd_positive_int(value: str) -> int:
+    number = positive_int(value)
+    if number % 2 == 0:
+        raise argparse.ArgumentTypeError("expected an odd integer")
+    return number
+
+
+def reward_interval(value: str) -> int | None:
+    if value == "terminal":
+        return None
+    return positive_int(value)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -40,10 +53,15 @@ def parse_args() -> argparse.Namespace:
     train = commands.add_parser("train", parents=[simulation], help="train a PPO time-step policy")
     train.add_argument("--budget", type=positive_int, default=48)
     train.add_argument("--reference-steps", type=positive_int, help="defaults to four times the PM budget")
-    train.add_argument("--density-scale", type=float, default=1e-6, help="density error scale in the terminal loss")
-    train.add_argument("--power-scale", type=float, default=1e-6, help="power error scale in the terminal loss")
+    train.add_argument("--reward-every", type=reward_interval, metavar="terminal|N",
+                       help="reward at termination only (default), or every N steps and at termination")
+    train.add_argument("--density-scale", type=float, default=1e-6, help="density error scale in the reward loss")
+    train.add_argument("--power-scale", type=float, default=1e-6, help="power error scale in the reward loss")
     train.add_argument("--updates", type=positive_int, default=2)
     train.add_argument("--episodes-per-update", type=positive_int, default=2)
+    train.add_argument("--kernel-size", type=odd_positive_int, default=3, help="policy convolution width per axis")
+    train.add_argument("--conv-layers", type=positive_int, default=2, help="number of policy convolution layers")
+    train.add_argument("--residual", action="store_true", help="enable residual connections after the first layer")
     train.add_argument("--output", type=Path, default=Path("policy.pt"))
     evaluate = commands.add_parser("evaluate", parents=[runtime], help="compare a policy to fixed steps")
     evaluate.add_argument("checkpoint", type=Path)
@@ -100,10 +118,12 @@ def train(args: argparse.Namespace, settings: dict, device: torch.device) -> Non
         reference_steps=args.reference_steps or 4 * args.budget,
         density_scale=args.density_scale,
         power_scale=args.power_scale,
+        reward_every=args.reward_every,
     )
     environment = TimeStepEnvironment(*build_simulation(settings, device), config)
     torch.manual_seed(args.seed)
-    policy = ActorCritic(len(config.actions)).to(device)
+    policy_config = dict(kernel_size=args.kernel_size, conv_layers=args.conv_layers, residual=args.residual)
+    policy = ActorCritic(len(config.actions), **policy_config).to(device)
     optimizer = torch.optim.Adam(policy.parameters(), lr=3e-4)
     next_seed = args.seed
     for update in range(1, args.updates + 1):
@@ -117,7 +137,8 @@ def train(args: argparse.Namespace, settings: dict, device: torch.device) -> Non
         mean_steps = sum(len(rollout.observations) for rollout in rollouts) / len(rollouts)
         print(f"update={update} reward={mean_reward:.6g} mean_pm_steps={mean_steps:g} ppo_loss={loss:.6g}", flush=True)
     save({
-        "policy": policy.state_dict(), "simulation": settings, "episode": asdict(config), "next_seed": next_seed,
+        "policy": policy.state_dict(), "policy_config": policy_config,
+        "simulation": settings, "episode": asdict(config), "next_seed": next_seed,
     }, args.output)
     print(f"checkpoint={args.output}")
 
@@ -134,11 +155,12 @@ def describe(errors: FieldErrors | None, config: EpisodeConfig) -> str:
 def evaluate(args: argparse.Namespace, device: torch.device) -> None:
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     config = EpisodeConfig(**checkpoint["episode"])
+    policy = ActorCritic(len(config.actions), **checkpoint["policy_config"])
+    policy.load_state_dict(checkpoint["policy"])
+    policy.to(device)
+    policy.eval()
     integrator, initial = build_simulation(checkpoint["simulation"], device)
     environment = TimeStepEnvironment(integrator, initial, config)
-    policy = ActorCritic(len(config.actions)).to(device)
-    policy.load_state_dict(checkpoint["policy"])
-    policy.eval()
     first_seed = checkpoint["next_seed"] if args.seed is None else args.seed
     for seed in range(first_seed, first_seed + args.episodes):
         result = evaluate_episode(environment, policy, seed)

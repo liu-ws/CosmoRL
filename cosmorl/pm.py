@@ -1,7 +1,9 @@
 """Periodic Particle-Mesh gravity and kick-drift-kick integration."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from math import exp, log, tau
+from typing import Literal
 
 import numpy as np
 import torch
@@ -11,6 +13,7 @@ from torch import Tensor
 def spectral_geometry(size: int, device: torch.device) -> tuple[Tensor, Tensor, Tensor]:
     """Return squared wave numbers, q/q², and a mask for all Nyquist planes."""
     args = {"n": size, "d": 1 / size, "device": device, "dtype": torch.float64}
+    # tau = 2 * pi
     full = tau * torch.fft.fftfreq(**args)
     half = tau * torch.fft.rfftfreq(**args)
     wave = torch.stack(torch.meshgrid(full, full, half, indexing="ij"))
@@ -85,13 +88,19 @@ class Background:
     omega_lambda: float
     omega_r: float
 
-    def time_factor(self, a0: float, a1: float, *, drift: bool) -> float:
+    def time_factor(self, a0: float, a1: float, *, kind: Literal["drift", "kick"]) -> float:
         """Integrate the drift or kick factor using eight nodes in ln(a)."""
+        if kind == "drift":
+            power = 2
+        elif kind == "kick":
+            power = 1
+        else:
+            raise ValueError(f"Expected 'drift' or 'kick', got {kind!r}.")
         log_start, log_end = log(a0), log(a1)
         half_interval = (log_end - log_start) / 2
         a = np.exp((log_start + log_end) / 2 + half_interval * _QUADRATURE_NODES)
         expansion = np.sqrt(self.omega_r / a**4 + self.omega_m / a**3 + self.omega_lambda)
-        integrand = 1 / (a ** (2 if drift else 1) * expansion)
+        integrand = 1 / (a**power * expansion)
         return float(half_interval * np.dot(_QUADRATURE_WEIGHTS, integrand))
 
 
@@ -103,6 +112,15 @@ class ParticleState:
     delta: Tensor
     force: Tensor
     stencil: CICStencil
+
+
+def fixed_targets(a_initial: float, a_final: float, steps: int) -> Iterator[float]:
+    if steps < 1 or not a_initial < a_final <= 1:
+        raise ValueError("Fixed integration requires positive steps and a_initial < a_final <= 1.")
+    log_interval = log(a_final / a_initial)
+    for index in range(1, steps):
+        yield a_initial * exp(log_interval * index / steps)
+    yield a_final
 
 
 class Integrator:
@@ -129,9 +147,9 @@ class Integrator:
         if not state.a < a_next <= 1:
             raise ValueError("A KDK step must advance a towards a <= 1.")
         midpoint = (state.a + a_next) / 2
-        kick_first = self.background.time_factor(state.a, midpoint, drift=False)
-        drift = self.background.time_factor(state.a, a_next, drift=True)
-        kick_last = self.background.time_factor(midpoint, a_next, drift=False)
+        kick_first = self.background.time_factor(state.a, midpoint, kind="kick")
+        drift = self.background.time_factor(state.a, a_next, kind="drift")
+        kick_last = self.background.time_factor(midpoint, a_next, kind="kick")
         half_momentum = state.momentum + kick_first * state.force
         positions = (state.positions + drift * half_momentum).remainder(1)
         if not torch.isfinite(positions).all().item():
@@ -145,10 +163,6 @@ class Integrator:
         return ParticleState(a_next, positions, momentum, delta, force, stencil)
 
     def advance_fixed(self, state: ParticleState, a_final: float, steps: int) -> ParticleState:
-        if steps < 1 or not state.a < a_final <= 1:
-            raise ValueError("Fixed integration requires positive steps and a_initial < a_final <= 1.")
-        a_initial = state.a
-        log_interval = log(a_final / a_initial)
-        for index in range(1, steps):
-            state = self.step(state, a_initial * exp(log_interval * index / steps))
-        return self.step(state, a_final)
+        for target in fixed_targets(state.a, a_final, steps):
+            state = self.step(state, target)
+        return state

@@ -61,12 +61,21 @@ class InitialConditions:
         table_k = table["k (h/Mpc)"] * cosmology.h
         if used_k.min() < table_k[0] or used_k.max() > table_k[-1]:
             raise ValueError("The initial Fourier modes exceed the k range returned by CLASS.")
+
+        # Compute the density and velocity divergence transfer functions for a one-fluid mixture of baryons and CDM.
         baryon_fraction = cosmology.omega_b / (cosmology.omega_cdm + cosmology.omega_b)
         log_table_k, log_k = np.log(table_k), np.log(used_k)
         density = baryon_fraction * table["d_b"] + (1 - baryon_fraction) * table["d_cdm"]
         divergence = baryon_fraction * table["t_b"] + (1 - baryon_fraction) * table["t_cdm"]
-        primordial_power = 2 * pi**2 * cosmology.scalar_amplitude * (used_k / pivot) ** (cosmology.scalar_index - 1)
-        primordial_power /= used_k**3
+
+        # Compute the primordial power spectrum.
+        primordial_power = (
+            2 * pi**2 * cosmology.scalar_amplitude
+            / pivot**3
+            * (used_k / pivot) ** (cosmology.scalar_index - 4)
+        )
+
+        # Compute the amplitudes of the density and momentum fields in Fourier space.
         amplitude = np.sqrt((size / box_mpc) ** 3 * primordial_power)
         self.density_amplitude = torch.zeros_like(k)
         self.momentum_amplitude = torch.zeros_like(k)
@@ -77,7 +86,8 @@ class InitialConditions:
         self.momentum_amplitude[keep] = torch.as_tensor(
             -a_initial / hubble_0 * amplitude * np.interp(log_k, log_table_k, divergence), device=device
         )
-
+        
+        # Create a lattice of points in the simulation box.
         axis = torch.arange(size, dtype=torch.float64, device=device) / size
         self.lattice = torch.cartesian_prod(axis, axis, axis)
 

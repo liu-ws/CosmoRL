@@ -321,270 +321,147 @@ $$
 
 可使用 FP64 自适应数值求积计算这两个一维积分。其误差应小于准备测量的轨道积分误差；函数可按背景参数复用或缓存。
 
-## 7. 密度扰动增长
+## 7. 线性密度扰动增长
 
-增长因子用来生成初始条件、确定线性功率谱的时间缩放，以及验证低振幅 PM 演化。这里在壳交叉之前将冷物质视为无压单流体，仅在线性推导中使用这种描述。
+在粒子轨道发生壳交叉（shell crossing）之前的早期线性阶段，可以将冷物质视为无压单流体，从而求得密度扰动随时间演化的解析与常微分方程描述。本节推导的线性增长因子 $D_+(a)$ 与对数增长率 $f(a)$ 在项目中承担两项任务：一是为下一节的 1LPT 初始条件提供理论框架，阐明密度与动量必须满足的物理匹配关系；二是作为独立且廉价的理论标尺，用于确定线性功率谱的时间缩放以及检验低振幅下 PM 模拟的数值精度（实际模拟的初始场生成见 8.3 节）。
 
-### 7.1 连续性方程与 Euler 方程
+### 7.1 连续性方程与线性增长方程
 
-用 $\mathbf v=\mathbf v_{\rm pec}$、共动导数 $\nabla_x$，密度对比度的连续性方程为
-
-$$
-\frac{\partial\delta}{\partial t}+\frac1a\nabla_x\cdot[(1+\delta)\mathbf v]=0.
-$$
-
-它可由物理坐标的质量守恒式，代入 $\rho=\bar\rho(1+\delta)$、$\frac{d\bar\rho}{dt}=-3H\bar\rho$ 并切换到固定共动坐标得到。
-
-由运动方程可得本动速度满足 Euler 方程：
+记本动速度为 $\mathbf v=\mathbf v_{\rm pec}$，在固定共动坐标 $\mathbf x$ 下，质量守恒与粒子运动方程分别给出流体连续性方程和 Euler 方程：
 
 $$
-\frac{\partial\mathbf v}{\partial t}+H\mathbf v
-+\frac1a(\mathbf v\cdot\nabla_x)\mathbf v
-=-\frac1a\nabla_x\Phi.
+\frac{\partial\delta}{\partial t}+\frac1a\nabla_x\cdot[(1+\delta)\mathbf v]=0,
 $$
 
-这里的时间偏导均在固定共动位置 $\mathbf x$ 处计算；背景密度 $\bar\rho$ 仅依赖时间，使用普通导数。沿粒子轨迹的导数为 $d\mathbf v/dt=\frac{\partial\mathbf v}{\partial t}+(\mathbf v\cdot\nabla_x)\mathbf v/a$，因此将粒子运动方程写成速度场的方程时会出现对流项。
+$$
+\frac{\partial\mathbf v}{\partial t}+H\mathbf v +\frac1a(\mathbf v\cdot\nabla_x)\mathbf v =-\frac1a\nabla_x\Phi.$$
 
-忽略二阶小量 $\delta\mathbf v$ 和 $(\mathbf v\cdot\nabla_x)\mathbf v$，并对线性化后的 Euler 方程取散度。定义 $\theta=\nabla_x\cdot\mathbf v$，得到
+其中时间偏导在固定共动位置处计算，Euler 方程中的对流项来自沿粒子轨迹的全导数 $d\mathbf v/dt=\frac{\partial\mathbf v}{\partial t}+(\mathbf v\cdot\nabla_x)\mathbf v/a$。
+
+在线性近似下，忽略二阶小量 $\delta\mathbf v$ 与 $(\mathbf v\cdot\nabla_x)\mathbf v$，并定义速度散度 $\theta=\nabla_x\cdot\mathbf v$。对线性化后的 Euler 方程取散度，得到耦合的一阶方程组：
 
 $$
-\frac{\partial\delta}{\partial t}=-\frac\theta a,\qquad
-\frac{\partial\theta}{\partial t}+H\theta=-\frac1a\nabla_x^2\Phi.
+\frac{\partial\delta}{\partial t}=-\frac\theta a,\qquad \frac{\partial\theta}{\partial t}+H\theta=-\frac1a\nabla_x^2\Phi.
 $$
 
-对第一式求时间导数，并用第二式消去 $\frac{\partial\theta}{\partial t}$：
+对第一式求时间导数，代入第二式消去 $\frac{\partial\theta}{\partial t}$ 并利用 Poisson 方程 $\nabla_x^2\Phi=4\pi Ga^2\bar\rho_m\delta$，即得线性增长方程：
 
 $$
-\frac{\partial^2\delta}{\partial t^2}=-\frac1a\frac{\partial\theta}{\partial t}+\frac{H\theta}{a}
-=\frac{2H\theta}{a}+\frac{\nabla_x^2\Phi}{a^2}
-=-2H\frac{\partial\delta}{\partial t}+4\pi G\bar\rho_m\delta.
-$$
+\boxed{\frac{\partial^2\delta}{\partial t^2}+2H\frac{\partial\delta}{\partial t}-4\pi G\bar\rho_m\delta=0.}$$
 
-所以
+引力项驱动过密区塌缩，哈勃膨胀项则抑制增长。在当前模型下，该方程不含波数 $k$，因此所有线性模式共享同一个时间增长函数，各尺度的相对振幅仅由初始功率谱决定。
 
-$$
-\boxed{\frac{\partial^2\delta}{\partial t^2}+2H\frac{\partial\delta}{\partial t}-4\pi G\bar\rho_m\delta=0.}
-$$
+### 7.2 改写为以尺度因子 $a$ 为自变量的方程
 
-引力项促使过密区增长，膨胀项抑制增长。在本模型下方程没有波数依赖，因此所有线性模式共享同一个增长函数。不同尺度的初始振幅仍由输入功率谱决定。
-
-### 7.2 改写成以 $a$ 为自变量的增长方程
-
-选取增长模，写作 $\delta(\mathbf x,a)=D_+(a)\delta_0(\mathbf x)$，约定 $D_+(1)=1$。设 $A(a)=aH(a)$，链式法则给出
+选取增长模，将时空变量分离为 $\delta(\mathbf x,a)=D_+(a)\delta_0(\mathbf x)$，并约定今天 $D_+(1)=1$。利用 $\dot a=aH$ 将时间导数转换为对 $a$ 的导数（撇号表示 $d/da$），代入增长方程可得：
 
 $$
-\dot D_+=AD_+',\qquad
-\ddot D_+=A^2D_+''+AA'D_+'.
+\boxed{ D_+''+\left[\frac3a+\frac{\mathcal E'}{\mathcal E}\right]D_+' -\frac{3\Omega_m}{2a^5\mathcal E^2}D_+=0, }
 $$
 
-代入增长方程并除以 $A^2$：
+借助瞬时物质占比 $\Omega_m(a)=\Omega_ma^{-3}/\mathcal E^2$，也可等价写为：
 
 $$
-\boxed{
-D_+''+\left[\frac3a+\frac{\mathcal E'}{\mathcal E}\right]D_+'
--\frac{3\Omega_m}{2a^5\mathcal E^2}D_+=0.
-}
+D_+''+\frac{3-\frac32\Omega_m(a)}aD_+' -\frac{3\Omega_m(a)}{2a^2}D_+=0.
 $$
 
-等价地，使用瞬时物质占比：
+令 $V=D_+'$，即可化为一阶常微分方程组：
 
 $$
-D_+''+\frac{3-\frac32\Omega_m(a)}aD_+'
--\frac{3\Omega_m(a)}{2a^2}D_+=0.
+\frac{dD_+}{da}=V,\qquad \frac{dV}{da}=-\left(\frac3a+\frac{\mathcal E'}{\mathcal E}\right)V +\frac{3\Omega_m}{2a^5\mathcal E^2}D_+.
 $$
 
-转化为一阶方程，令 $V=D_+'$：
+这个仅含两个标量的背景 ODE 可直接用 Runge–Kutta 方法高速求解并制表，无需调用昂贵的 PM 力计算，非常适合用于数值诊断与解析对照。
+
+### 7.3 增长模初值、归一化与增长率
+
+在物质主导的早期极限（满足 $\Omega_\Lambda a_{\rm start}^3/\Omega_m\ll1$ 且仍在忽略辐射的模型适用范围内），有 $\Omega_m(a)\simeq1$，方程退化为 $D_+''+\frac{3}{2a}D_+'-\frac{3}{2a^2}D_+=0$，通解为 $D(a)=C_1a+C_2a^{-3/2}$。
+
+为选出纯增长模 $D_+=C_1a$，先取 $C_1=1$ 设定积分初值：
 
 $$
-\frac{dD_+}{da}=V,\qquad
-\frac{dV}{da}=-\left(\frac3a+\frac{\mathcal E'}{\mathcal E}\right)V
-+\frac{3\Omega_m}{2a^5\mathcal E^2}D_+.
+D_{\rm raw}(a_{\rm start})=a_{\rm start},\qquad D_{\rm raw}'(a_{\rm start})=1.
 $$
 
-**这个只有两个标量的背景 ODE 很适合用 RK 方法求解**，它不包含昂贵的 PM 调用。可先求出增长函数表，再供粒子初始化和诊断使用。
-
-### 7.3 增长模初值与归一化
-
-选择模型内足够早、满足 $\Omega_\Lambda a_{\rm start}^3/\Omega_m\ll1$ 的起点，利用物质主导近似，把 $\Omega_m(a)\simeq1$ 代入 7.2 的方程：
+数值积分至 $a=1$ 后，用同一常数统一归一化，以保证增长因子与其导数的比例准确：
 
 $$
-D_+''+\frac{3}{2a}D_+'-\frac{3}{2a^2}D_+=0.
+D_+(a)=\frac{D_{\rm raw}(a)}{D_{\rm raw}(1)},\qquad D_+'(a)=\frac{D_{\rm raw}'(a)}{D_{\rm raw}(1)}.
 $$
 
-通解是
-
-$$
-D(a)=C_1a+C_2a^{-3/2}.
-$$
-
-选取增长模
-
-$$
-D_+=C_1 a
-$$
-
-先选择系数 $C_1=1$，给出积分初值
-
-$$
-D_{\rm raw}(a_{\rm start})=a_{\rm start},\qquad
-D_{\rm raw}'(a_{\rm start})=1.
-$$
-
-积分到 $a=1$ 后，统一归一化，矫正系数：
-
-$$
-D_+(a)=\frac{D_{\rm raw}(a)}{D_{\rm raw}(1)},\qquad
-D_+'(a)=\frac{D_{\rm raw}'(a)}{D_{\rm raw}(1)}.
-$$
-
-导数必须除以同一个常数，否则初始速度会错。为了检验忽略暗能量项的误差是否可以接受，可以用更早的起点复算，检查增长函数是否收敛。这里把起点前移需要在所选“物质加 Λ”近似模型内改善初值，不能早到早期辐射不可忽略的时期。
-
-常用的对数增长率定义为
+实践中可通过前移 $a_{\rm start}$ 复算来检验暗能量截断误差是否已收敛。由此可直接算得常用的对数增长率（参见 [Polarski & Gannouji 的研究](https://arxiv.org/abs/0710.1510)）：
 
 $$
 \boxed{f(a)=\frac{d\ln D_+}{d\ln a}=\frac{aD_+'(a)}{D_+(a)}.}
 $$
 
-可由已求出的 $D_+$ 与导数直接计算，关于增长率及其与背景模型的关系，可参阅 [Polarski & Gannouji 的研究](https://arxiv.org/abs/0710.1510)。
 
-## 8. 从增长因子得到 1LPT 初始条件
+## 8. 1LPT 初始条件
 
-### 8.1 位移与密度的关系
+为了启动 N-body 模拟，需要将初始时刻 $a_i$ 的线性扰动场转化为均匀格点上每个粒子的位置偏移与正则动量。本节先在 8.1 与 8.2 节基于一阶拉格朗日微扰理论（1LPT / Zel'dovich 近似）建立位移、动量与密度场之间的通用关系，再在 8.3 节说明代码如何接入玻尔兹曼求解器 CLASS 来生成高精度的实际初始条件。
 
-用 $\mathbf Q$ 标记均匀分布的初始粒子位置，均在无量纲单位盒内。Zel'dovich（1LPT）近似写成
+### 8.1 从密度场反解粒子位移
 
-$$
-\mathbf y(\mathbf Q,a)=\mathbf Q+D_+(a)\mathbf s(\mathbf Q).
-$$
+用 $\mathbf Q$ 标记单位周期盒 $[0,1)^3$ 中均匀分布的参考格点，1LPT 将粒子位置写作：
 
-其中 $\mathbf s$ 是与时间无关的位移场。在均匀参考坐标中，取一小块体积 $d^3Q$。粒子移动后，它变成实际共动坐标中的体积 $d^3y$。参考分布的密度为平均密度 $\bar\rho_m(a)$，扰动后的密度为
+$$\mathbf y(\mathbf Q,a)=\mathbf Q+\mathbf s(\mathbf Q,a).$$
 
-$$
-\rho(\mathbf y,a)=\bar\rho_m(a)[1+\delta(\mathbf y,a)].
-$$
+考虑参考坐标中的微元体积 $d^3Q$，粒子位移后变为实际共动体积 $d^3y$。由于该微元的质量守恒，即 $\bar\rho_m(a)(aL)^3d^3Q=\bar\rho_m(a)[1+\delta(\mathbf y,a)](aL)^3d^3y$，消去公因子后得到密度对比度与坐标变换雅可比行列式 $J$ 的关系：
 
-同一小团物质的质量不变，因此
+$$1+\delta=\frac1J,\qquad J=\det\left[\delta_{ij}+\frac{\partial s_i}{\partial Q_j}\right].$$
 
-$$
-\bar\rho_m(a)(aL)^3d^3Q=
-\bar\rho_m(a)[1+\delta(\mathbf y,a)](aL)^3d^3y.
-$$
+利用小扰动行列式展开 $\det(I+\varepsilon)=1+\operatorname{tr}\varepsilon+O(\varepsilon^2)$，保留一阶项即得位移散度方程：
 
-消去共同因子
+$$\boxed{\nabla_Q\cdot\mathbf s_i=-\delta_i.}$$
 
-$$
-[1+\delta(\mathbf y,a)]\,d^3y=d^3Q,
-\qquad
-1+\delta=\frac1J,
-$$
+其中下标 $i$ 表示初始时刻 $a_i$；若用线性外推到今天的密度场 $\delta_0$ 与时间无关的位移场 $\mathbf s$ 表示，则等价为 $\mathbf s_i=D_+(a_i)\mathbf s$ 与 $\nabla_Q\cdot\mathbf s=-\delta_0$。
 
-利用上面的近似位移公式，Jacobian 为
+散度方程本身无法唯一确定矢量场，结合早期线性流动的无旋条件 $\nabla_Q\times\mathbf s_i=0$，在傅里叶空间（单位盒波矢 $\mathbf q=2\pi\mathbf n$）中可推得 $\mathbf q\times\widetilde{\mathbf s}_i=0$，即每个模式的位移方向沿波矢 $\mathbf q$ 分布。代入 $i\mathbf q\cdot\widetilde{\mathbf s}_i=-\widetilde\delta_i$，唯一解出傅里叶空间位移公式：
 
-$$
-J=\det\left[\delta_{ij}+D_+\frac{\partial s_i}{\partial Q_j}\right]
-$$
+$$\boxed{\widetilde{\mathbf s}_i(\mathbf q)=i\frac{\mathbf q}{q^2}\widetilde\delta_i(\mathbf q).}$$
 
-对于小矩阵扰动 $\varepsilon$，行列式满足
+### 8.2 初始动量的物理约束
 
-$$
-\det(I+\varepsilon)=1+\operatorname{tr}\varepsilon+O(\varepsilon^2).
-$$
+有了位移场后，初始动量不能随意设为零：在存在密度扰动时令初始动量为零，会同时激发衰减模，破坏纯增长模的演化假设。
 
-因此雅可比可表示为
+在第 7 节的单流体模型下，位移随时间按 $\mathbf s(\mathbf Q,a)=D_+(a)\mathbf s(\mathbf Q)$ 增长，结合无量纲运动方程 $d\mathbf y/da=\mathbf u/(a^3\mathcal E)$，可直接确定粒子在 $a_i$ 处的初始位置与无量纲正则动量：
+
+$$\boxed{ \mathbf y_i=\operatorname{wrap}[\mathbf Q+\mathbf s_i],\qquad \mathbf u_i=a_i^3\mathcal E(a_i)D_+'(a_i)\mathbf s=a_i^2\mathcal E(a_i)f(a_i)\mathbf s_i. }$$
+
+同时，由于线性密度扰动满足 $\delta\propto D_+$，线性功率谱随时间的缩放关系为：
+
+$$P_{\rm lin}(k,a)=D_+^2(a)P_{\rm lin}(k,1).$$
+
+这两组关系不仅清晰展示了“初始速度必须与密度增长率严格匹配”的物理要求，也为第 10 节的 Einstein–de Sitter 解析检验提供了直接的基准公式。
+
+### 8.3 工程实现：用原初功率谱和 CLASS 生成初始条件
+
+在实际模拟中，为了精确包含重子与冷暗物质的差异、辐射背景以及与牛顿模拟自洽的规范选择，代码不直接依赖单流体增长因子 $D_+(a)$，而是调用玻尔兹曼求解器 CLASS，将原初曲率扰动 $\mathcal R$ 直接线性映射到初始红移 $z_i=a_i^{-1}-1$，生成相位自洽的密度场与速度散度场。具体工作流如下：
+
+1. **生成原初曲率场**：采用常数谱指数幂律谱 $P_{\mathcal R}(k)=\frac{2\pi^2}{k^3}A_s\left(\frac{k}{k_{\rm pivot}}\right)^{n_s-1}$（默认取 $A_s=2.1\times10^{-9}$、$n_s=0.965$、$k_{\rm pivot}=0.05\,\mathrm{Mpc}^{-1}$）。在傅里叶空间中，将实空间单位方差高斯白噪声的 FFT 系数 $W(\mathbf q)$ 按物理波数 $k=\vert{}\mathbf q\vert{}/L$ 缩放，得到原初曲率场（$L$ 为共动盒长，$N$ 为每轴格点数）：
 
 $$
-J=1+D_+\nabla_Q\cdot\mathbf s+O((D_+\nabla_Q\mathbf s)^2).
+\widehat{\mathcal R}(\mathbf q)=W(\mathbf q)\sqrt{\left(\frac NL\right)^3 P_{\mathcal R}(k)}.
 $$
 
-保留一阶项：
+
+2. **获取并合并传递函数**：调用 CLASS 计算 $z_i$ 处 N-body gauge 的重子与冷暗物质传递函数，按背景质量占比加权合并为总物质的密度传递函数 $T_\delta(k,z_i)$ 与速度散度传递函数 $T_\theta(k,z_i)$。
+
+
+3. **构造初始密度与速度散度场**：将 $T_\delta$ 与 $T_\theta$ 分别乘以同一份 $\widehat{\mathcal R}(\mathbf q)$，得到初始密度扰动 $\widehat\delta_i$ 与速度散度 $\widehat\theta_i$（其中 $\theta_i=\nabla_{\mathbf x}\cdot(\mathbf v_{\rm pec}/c)$，单位为 $\mathrm{Mpc}^{-1}$）。由此确定的初始线性物质功率谱为 $P_\delta(k,z_i)=\vert{}T_\delta(k,z_i)\vert{}^2P_{\mathcal R}(k)$。
+
+
+4. **反解粒子位移与动量**：在傅里叶空间中将零模与 Nyquist 平面置零，由 8.1 节的无旋反解关系构造位移与无量纲正则动量：
 
 $$
-\delta=-D_+\nabla_Q\cdot\mathbf s.
+\widehat{\mathbf s}_i=i\frac{\mathbf q}{q^2}\widehat\delta_i,\qquad \widehat{\mathbf u}_i=-i\frac{\mathbf q}{q^2}\frac{a_i}{H_0/c}\widehat\theta_i.
 $$
 
-若 $\delta_0$ 表示线性外推到 $a=1$ 的密度扰动，则
+最后经逆 FFT 变换回实空间，将位移叠加到均匀初始格点并按周期边界折回，完成粒子初始化。
 
-$$
-\boxed{\nabla_Q\cdot\mathbf s=-\delta_0.}
-$$
 
-这里 $\delta_0$ 是线性外推场，不是已经完成非线性演化的今天密度场。如果输入扰动位于 $a_i$，令 $\mathbf s_i=D_+(a_i)\mathbf s$，则有
 
-$$
-\nabla_Q\cdot\mathbf s_i=-\delta_i,\qquad \mathbf y=\mathbf Q+\mathbf s_i.
-$$
-
-散度方程还不能唯一确定 $\mathbf s$，进一步加上无旋条件，采用傅里叶变换
-
-$$
-\mathbf s(\mathbf Q)=\sum_{\mathbf q}\widetilde{\mathbf s}(\mathbf q)
-e^{i\mathbf q\cdot\mathbf Q},
-$$
-
-其中 $\mathbf q=2\pi\mathbf n$ 为单位盒波矢，取旋度可得
-
-$$
-\nabla_Q\times\mathbf s=0
-\quad\Longrightarrow\quad
-\mathbf q\times\widetilde{\mathbf s}(\mathbf q)=0.
-$$
-
-每个傅里叶模式的位移振幅都沿着该模式的波矢方向，可以写成
-
-$$
-\widetilde{\mathbf s}(\mathbf q)=A(\mathbf q)\mathbf q.
-$$
-
-代入散度条件
-
-$$
-i\mathbf q\cdot\widetilde{\mathbf s}
-=iAq^2=-\widetilde\delta_0,
-$$
-
-因为 $i\mathbf q\cdot(i\mathbf q\widetilde\delta_0/q^2)=-\widetilde\delta_0$，所以解得：
-
-$$
-\boxed{\widetilde{\mathbf s}(\mathbf q)
-=i\frac{\mathbf q}{q^2}\widetilde\delta_0(\mathbf q).}
-$$
-
-### 8.2 初始动量不能随便设成零
-
-由 $d\mathbf y/da=D_+'\mathbf s$ 和 $d\mathbf y/da=\mathbf u/(a^3\mathcal E)$：
-
-$$
-\boxed{
-\mathbf y_i=\operatorname{wrap}[\mathbf Q+D_+(a_i)\mathbf s],\qquad
-\mathbf u_i=a_i^3\mathcal E(a_i)D_+'(a_i)\mathbf s.
-}
-$$
-
-也可以写成 
-$$
-\mathbf u_i=a_i^2\mathcal E(a_i)f(a_i)D_+(a_i)\mathbf s=a_i^2\mathcal E(a_i)f(a_i)\mathbf s_i
-$$
-
-若给有密度扰动的粒子任意设置零动量，通常会混入衰减模，无法得到期望的纯增长初始条件。
-
-在线性理论中 $\delta\propto D_+$，功率谱是振幅的二次量，因此
-
-$$
-P_{\rm lin}(k,a)=D_+^2(a)P_{\rm lin}(k,1).
-$$
-
-### 8.3 实现中从 CLASS 读取初值
-
-项目在 $z_i=a_i^{-1}-1$ 调用 CLASS，直接读取 N-body gauge 的重子和冷暗物质的密度与速度散度传递函数。各分量按背景质量占比合并为单一无碰撞流体，密度和速度共用一次高斯曲率场抽样。取盒长 $L$ 的单位为 Mpc，向 CLASS 查询的波数为 $k=q/L$。
-
-令 $\theta_i=\nabla_{\mathbf x}\cdot(\mathbf v_{\rm pec}/c)$ 为 CLASS 速度散度，单位为 $\mathrm{Mpc}^{-1}$。用 CLASS 的输出在傅里叶空间分别构造位移与无量纲正则动量。
-
-$$
-\widetilde{\mathbf s}_i=i\frac{\mathbf q}{q^2}\widetilde\delta_i,\qquad
-\widetilde{\mathbf u}_i=-i\frac{\mathbf q}{q^2}\frac{a_i}{H_0/c}\widetilde\theta_i.
-$$
-
-零模和初始粒子格上的 Nyquist 平面置零。后续以 Newtonian PM 演化粒子，时间积分因子使用 CLASS 给出的 $\Omega_m$、$\Omega_\Lambda$ 与 $\Omega_r$，因此膨胀率还包含 $\Omega_r a^{-4}$。线性增长方程保留作推导和解析对照。 [CLASS 输出参数](https://github.com/lesgourg/class_public/blob/master/explanatory.ini)
+初始化完成后，粒子交由 Newtonian PM 演化，时间积分因子直接使用 CLASS 返回的 $\Omega_m$、$\Omega_\Lambda$ 与 $\Omega_r$（因此背景膨胀率还包含辐射项 $\Omega_r a^{-4}$）。具体代码与参数配置可参阅 [CLASS 原初谱参数](https://www.google.com/search?q=https://github.com/lesgourg/class_public/blob/master/explanatory.ini%23L840-L881) 与 [CLASS 输出参数](https://github.com/lesgourg/class_public/blob/master/explanatory.ini)。
 
 ## 9. 粒子质量与模拟盒的总质量
 

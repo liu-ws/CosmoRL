@@ -1,5 +1,6 @@
 """A fixed-budget environment for adaptive KDK time stepping."""
 
+from bisect import bisect_right
 from dataclasses import dataclass
 from math import ceil, exp, isfinite, log, tau
 
@@ -7,7 +8,7 @@ import torch
 from torch import Tensor
 
 from .initial import InitialConditions
-from .pm import Integrator, ParticleState
+from .pm import Integrator, ParticleState, fixed_targets
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class EpisodeConfig:
     actions: tuple[float, ...] = (0.01, 0.02, 0.04, 0.08)
     density_scale: float = 1e-6
     power_scale: float = 1e-6
+    reward_every: int | None = None
 
     def __post_init__(self) -> None:
         if not 0 < self.a_initial < self.a_final <= 1:
@@ -31,6 +33,8 @@ class EpisodeConfig:
             raise ValueError("The reference must use more PM steps than the policy budget.")
         if not all(isfinite(scale) and scale > 0 for scale in (self.density_scale, self.power_scale)):
             raise ValueError("Error scales must be finite and positive.")
+        if self.reward_every is not None and (type(self.reward_every) is not int or self.reward_every < 1):
+            raise ValueError("reward_every must be a positive integer or None for terminal rewards.")
 
     def minimum_steps(self, a: float) -> int:
         return ceil(log(self.a_final / a) / max(self.actions) - 1e-10)
@@ -118,6 +122,7 @@ class TimeStepEnvironment:
         self.config = config
         mesh = integrator.mesh
         self.comparison = FieldComparison(mesh.q_squared, mesh.size, initial.shape[0])
+        self._reference_targets = tuple(fixed_targets(config.a_initial, config.a_final, config.reference_steps))
         self.state: ParticleState | None = None
         self.steps_used = 0
         self.targets: tuple[float | None, ...] = ()
@@ -125,8 +130,10 @@ class TimeStepEnvironment:
     @torch.no_grad()
     def reset(self, seed: int) -> Observation:
         self.initial_state = self.integrator.initialize(self.config.a_initial, *self.initial.sample(seed))
-        reference = self.integrator.advance_fixed(self.initial_state, self.config.a_final, self.config.reference_steps)
-        self.reference = self.comparison.spectrum(reference.delta)
+        self._reference_anchor = self.initial_state
+        self._reference_index = 0
+        self._final_reference: Tensor | None = None
+        self._scored_loss = 0.0
         self.state = self.initial_state
         self.steps_used = 0
         self.targets = self.config.legal_targets(self.state.a, self.config.budget)
@@ -150,18 +157,47 @@ class TimeStepEnvironment:
         try:
             state = self.integrator.step(self.state, target)
         except FloatingPointError:
-            self.state = None
-            return Transition(None, -2)
+            return self._finish()
         if state.a == self.config.a_final:
-            self.state = None
-            errors = self.errors(state)
-            return Transition(None, -errors.loss(self.config), errors)
+            return self._finish(self.errors(state))
         self.targets = self.config.legal_targets(state.a, self.config.budget - self.steps_used)
         if all(target is None for target in self.targets):
-            self.state = None
-            return Transition(None, -2)
+            return self._finish()
         self.state = state
+        interval = self.config.reward_every
+        if interval is not None and self.steps_used % interval == 0:
+            errors = self.errors(state)
+            return Transition(self.observe(state), self._reward(errors.loss(self.config)), errors)
         return Transition(self.observe(state), 0)
 
+    def _reward(self, loss: float) -> float:
+        reward = self._scored_loss - loss
+        self._scored_loss = loss
+        return reward
+
+    def _finish(self, errors: FieldErrors | None = None) -> Transition:
+        self.state = None
+        loss = 2.0 if errors is None else errors.loss(self.config)
+        return Transition(None, self._reward(loss), errors)
+
     def errors(self, state: ParticleState) -> FieldErrors:
-        return self.comparison.compare(self.comparison.spectrum(state.delta), self.reference)
+        return self.comparison.compare(self.comparison.spectrum(state.delta), self._reference_spectrum(state.a))
+
+    def _reference_spectrum(self, a: float) -> Tensor:
+        if a == self.config.a_final and self._final_reference is not None:
+            return self._final_reference
+        end = bisect_right(self._reference_targets, a)
+        if end < self._reference_index:
+            anchor, start = self.initial_state, 0
+        else:
+            anchor, start = self._reference_anchor, self._reference_index
+        for target in self._reference_targets[start:end]:
+            anchor = self.integrator.step(anchor, target)
+        if end >= self._reference_index:
+            self._reference_anchor, self._reference_index = anchor, end
+        # A partial step probes the same scale factor without changing the fixed reference trajectory.
+        reference = anchor if a == anchor.a else self.integrator.step(anchor, a)
+        spectrum = self.comparison.spectrum(reference.delta)
+        if a == self.config.a_final:
+            self._final_reference = spectrum
+        return spectrum
